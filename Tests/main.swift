@@ -18,8 +18,17 @@ import Foundation
     defer { try? FileManager.default.removeItem(at: dir) }
     let model = AppModel(directory: dir, ticking: false)
     expect(model.add("instagram.com"), "Add domain")
-    model.start(minutes: 0)
+    model.start(seconds: 0)
     expect(model.active == nil, "Reject zero duration")
+    model.start(seconds: FocusDuration.maximum + 1)
+    expect(model.active == nil, "Reject over six hours at model boundary")
+    expect(FocusDuration.isValid(1), "Allow a one-second session")
+    expect(FocusDuration.isValid(21600), "Allow exactly six hours")
+    expect(!FocusDuration.isValid(-1), "Reject negative duration")
+    expect(FocusDuration.seconds(hours: 6, minutes: 15, seconds: 30) == 21600, "Clamp picker at six hours")
+    expect(FocusDuration.seconds(hours: 1, minutes: 2, seconds: 3) == 3723, "Combine hour minute second values")
+    expect(FocusDuration.countdown(3723) == "1:02:03", "Hour countdown")
+    expect(FocusDuration.countdown(25) == "00:25", "Sub-minute countdown")
     // Persist an active session directly to avoid triggering real browser automation in tests.
     let start = Date().addingTimeInterval(-30)
     model.state.active = FocusSession(start: start, scheduledEnd: start.addingTimeInterval(1500), lastSeen: Date(), initialDomains: model.state.domains)
@@ -44,6 +53,6 @@ import Foundation
     let csv = exportCSV(restored.state.history)
     expect(csv.contains("interrupted") && csv.contains("reddit.com @"), "CSV history and additions")
     expect(csvField("=SUM(1)") == "\"'=SUM(1)\"", "CSV formula protection")
-    print("All 25 domain, session, persistence and CSV checks passed.")
+    print("All 33 duration, domain, session, persistence and CSV checks passed.")
 }
 try MainActor.assumeIsolated { try runTests() }

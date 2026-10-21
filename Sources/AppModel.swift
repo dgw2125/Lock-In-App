@@ -15,7 +15,7 @@ import UniformTypeIdentifiers
     private let file: URL
     var active: FocusSession? { state.active }
     var remaining: Int { max(0, Int(ceil((active?.scheduledEnd ?? now).timeIntervalSince(now)))) }
-    var countdown: String { String(format: "%02d:%02d", remaining / 60, remaining % 60) }
+    var countdown: String { FocusDuration.countdown(remaining) }
     init(directory: URL? = nil, ticking: Bool = true) {
         let folder = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Lock In", isDirectory: true)
         file = folder.appendingPathComponent("state.json")
@@ -61,10 +61,10 @@ import UniformTypeIdentifiers
         state.domains.removeAll { $0 == domain }
         if !save() { state = before }
     }
-    func start(minutes: Int) {
-        guard active == nil, !state.domains.isEmpty, (1...1440).contains(minutes) else { return }
+    func start(seconds: Int) {
+        guard active == nil, !state.domains.isEmpty, FocusDuration.isValid(seconds) else { return }
         now = Date(); redirects = 0
-        state.active = FocusSession(start: now, scheduledEnd: now.addingTimeInterval(Double(minutes * 60)), lastSeen: now, initialDomains: state.domains)
+        state.active = FocusSession(start: now, scheduledEnd: now.addingTimeInterval(Double(seconds)), lastSeen: now, initialDomains: state.domains)
         guard save() else { state.active = nil; return }
         guardMessage = "Checking browser permissions…"
         poll()

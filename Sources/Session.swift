@@ -27,6 +27,19 @@ struct SavedState: Codable {
     var active: FocusSession?
     var history: [FocusSession] = []
 }
+enum FocusDuration {
+    static let maximum = 6 * 60 * 60
+    static func isValid(_ seconds: Int) -> Bool { (1...maximum).contains(seconds) }
+    static func seconds(hours: Int, minutes: Int, seconds: Int) -> Int {
+        min(maximum, max(0, hours) * 3600 + max(0, minutes) * 60 + max(0, seconds))
+    }
+    static func countdown(_ seconds: Int) -> String {
+        let value = max(0, seconds)
+        if value >= 3600 { return String(format: "%d:%02d:%02d", value / 3600, value / 60 % 60, value % 60) }
+        return String(format: "%02d:%02d", value / 60, value % 60)
+    }
+}
+
 enum DomainRule {
     static func normalize(_ input: String) -> String? {
         let raw = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

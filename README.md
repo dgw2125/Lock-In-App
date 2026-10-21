@@ -14,11 +14,11 @@ The app stays in the menu bar when its window closes. Click its menu bar countdo
 ## Use
 
 1. Add domains such as `instagram.com`. Pasted URLs normalize to their host. Add the base domain to include all its subdomains and paths. Entries are never automatically reduced to their registrable domain: `www.instagram.com` does not also block `instagram.com`.
-2. Choose a duration (1–1440 minutes) and start.
+2. Choose hours, minutes, and seconds (1 second to 6 hours) and start.
 3. Allow macOS Automation requests for the supported browsers you want monitored. If denied, enable Lock In under System Settings → Privacy & Security → Automation. The app displays automation failures.
 4. During a session, additions take effect on the next available browser scan. Existing entries cannot be removed.
 5. To end early, confirm and type `UNLOCK` exactly.
-6. View history or export CSV from the History tab.
+6. Open the ⋯ menu at the top right, choose Session history, or export CSV from that view. Use Back to focus to return.
 
 ## Blocking scope — read before relying on it
 
@@ -44,7 +44,7 @@ The JSON stores your saved domains, active-session checkpoint, and history. Hist
 ./test.sh
 ```
 
-Automated checks cover domain normalization and boundary matching, duration validation, removal restrictions, session snapshots, interruption recovery, persisted additions, and CSV escaping. See `Tests/manual-checklist.md` for permission and browser checks. This development build is ad-hoc signed, not notarized or App Store distributed.
+Automated checks cover domain normalization and boundary matching, second-level duration validation and the six-hour limit, removal restrictions, session snapshots, interruption recovery, persisted additions, and CSV escaping. See `Tests/manual-checklist.md` for permission and browser checks. This development build is ad-hoc signed, not notarized or App Store distributed.
 
 ## Source map
 
@@ -54,3 +54,5 @@ Automated checks cover domain normalization and boundary matching, duration vali
 - `Sources/main.swift`: native window, menu bar, history, override gates.
 - `Resources/Info.plist`: app identity and Automation permission explanation.
 - `build.sh`, `test.sh`: reproducible local build and checks.
+
+The app uses a bundled vector lock-and-focus icon at all standard Dock sizes. The build stages a new bundle before replacing the old one and retains the previous build under `build/previous.*`. Reopen the app after a build to use the updated version.

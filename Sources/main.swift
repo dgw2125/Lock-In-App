@@ -4,8 +4,8 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var model: AppModel
     @State private var domain = ""
-    @State private var minutes = 25
-    @State private var selected = 0
+    @State private var duration = 25 * 60
+    @State private var showingHistory = false
     @State private var gateOne = false
     @State private var gateTwo = false
     @State private var unlock = ""
@@ -18,12 +18,22 @@ struct ContentView: View {
                     Text("Make room for what matters.").foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("PROTOTYPE").font(.caption.bold()).foregroundStyle(.secondary)
+                Menu {
+                    Button { showingHistory = true } label: {
+                        Label("Session history", systemImage: "clock.arrow.circlepath")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 20, weight: .semibold))
+                        .frame(width: 32, height: 32).contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .accessibilityLabel("More options").help("More options")
             }
-            Picker("Section", selection: $selected) {
-                Text("Focus").tag(0); Text("History").tag(1)
-            }.pickerStyle(.segmented)
-            if selected == 0 { focus } else { history }
+            if showingHistory {
+                Button { showingHistory = false } label: { Label("Back to focus", systemImage: "chevron.left") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                history
+            } else { focus }
         }
         .padding(26).frame(minWidth: 640, idealWidth: 680, minHeight: 680)
         .alert("End your focus session?", isPresented: $gateOne) {
@@ -57,19 +67,24 @@ struct ContentView: View {
                         Text(model.countdown).font(.system(size: 62, weight: .medium, design: .monospaced))
                         Button("End session early…") { gateOne = true }
                     } else {
-                        HStack {
+                        HStack(spacing: 10) {
                             ForEach([25, 50, 90], id: \.self) { value in
-                                Button("\(value) min") { minutes = value }.tint(minutes == value ? .green : .gray)
+                                Button("\(value) min") { duration = value * 60 }
+                                    .buttonStyle(.bordered)
+                                    .tint(duration == value * 60 ? .green : .gray)
                             }
                         }
-                        HStack {
-                            Text("Duration")
-                            TextField("Minutes", value: $minutes, format: .number).frame(width: 65).textFieldStyle(.roundedBorder)
-                            Text("minutes (1–1440)").foregroundStyle(.secondary)
-                        }.fixedSize()
-                        Button("Start focus session") { model.start(minutes: minutes) }
-                            .buttonStyle(.borderedProminent).tint(.green)
-                            .disabled(model.state.domains.isEmpty || !(1...1440).contains(minutes))
+                        HStack(spacing: 10) {
+                            DurationUnit(title: "HOURS", value: component(3600), maximum: 6)
+                            Text(":").font(.system(size: 30, weight: .light)).foregroundStyle(.tertiary)
+                            DurationUnit(title: "MINUTES", value: component(60), maximum: duration >= FocusDuration.maximum ? 0 : 59)
+                            Text(":").font(.system(size: 30, weight: .light)).foregroundStyle(.tertiary)
+                            DurationUnit(title: "SECONDS", value: component(1), maximum: duration >= FocusDuration.maximum ? 0 : 59)
+                        }.padding(.vertical, 4)
+                        Text("Up to 6 hours").font(.caption).foregroundStyle(.secondary)
+                        Button("Start focus session") { model.start(seconds: duration) }
+                            .buttonStyle(.borderedProminent).tint(.green).controlSize(.large)
+                            .disabled(model.state.domains.isEmpty || !FocusDuration.isValid(duration))
                     }
                 }.frame(maxWidth: .infinity).padding(14)
             }
@@ -106,6 +121,17 @@ struct ContentView: View {
                 }.font(.caption).frame(maxWidth: .infinity, alignment: .leading).padding(6)
             }
         }
+    }
+    private func component(_ unit: Int) -> Binding<Int> {
+        Binding(
+            get: { unit == 3600 ? duration / 3600 : duration / unit % 60 },
+            set: { value in
+                let hours = unit == 3600 ? value : duration / 3600
+                let minutes = unit == 60 ? value : duration / 60 % 60
+                let seconds = unit == 1 ? value : duration % 60
+                duration = FocusDuration.seconds(hours: hours, minutes: minutes, seconds: seconds)
+            }
+        )
     }
     private func addDomain() { if model.add(domain) { domain = "" } }
     private var history: some View {
@@ -146,12 +172,59 @@ struct ContentView: View {
     }
 }
 
+struct DurationUnit: View {
+    let title: String
+    @Binding var value: Int
+    let maximum: Int
+    @FocusState private var isEditing: Bool
+    @State private var text = ""
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Button { value = min(maximum, value + 1) } label: {
+                Image(systemName: "chevron.up").frame(width: 70, height: 18)
+            }.disabled(value >= maximum).accessibilityLabel("Increase " + title.lowercased())
+            TextField("00", text: $text)
+                .font(.system(size: 34, weight: .medium, design: .rounded).monospacedDigit())
+                .multilineTextAlignment(.center).textFieldStyle(.plain)
+                .frame(width: 72).focused($isEditing)
+                .accessibilityLabel(title.capitalized)
+                .onChange(of: text) { _, newValue in
+                    guard isEditing else { return }
+                    let digits = String(newValue.filter { $0.isASCII && $0.isNumber }.prefix(2))
+                    let bounded = min(maximum, Int(digits) ?? 0)
+                    let cleaned = digits.isEmpty ? "" : String(bounded)
+                    if text != cleaned { text = cleaned }
+                    value = bounded
+                }
+                .onChange(of: isEditing) { _, focused in
+                    text = focused ? String(value) : String(format: "%02d", value)
+                }
+                .onChange(of: value) { _, newValue in
+                    if !isEditing { text = String(format: "%02d", newValue) }
+                }
+                .onAppear { text = String(format: "%02d", value) }
+            Text(title).font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+            Button { value = max(0, value - 1) } label: {
+                Image(systemName: "chevron.down").frame(width: 70, height: 18)
+            }.disabled(value <= 0).accessibilityLabel("Decrease " + title.lowercased())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.background, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(isEditing ? Color.green.opacity(0.7) : Color.primary.opacity(0.08), lineWidth: 1))
+    }
+}
+
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     var window: NSWindow!
     var status: NSStatusItem!
     var refresh: Timer?
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), let icon = NSImage(contentsOf: iconURL) {
+            NSApp.applicationIconImage = icon
+        }
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 740), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Lock In"; window.center(); window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: ContentView(model: model))
