@@ -27,6 +27,12 @@ struct SavedState: Codable {
     var active: FocusSession?
     var history: [FocusSession] = []
 }
+// A pending countdown lives only while the app is running. It is not focus time.
+struct ScheduledFocus {
+    var startsAt: Date
+    var durationSeconds: Int
+    static let maximumDelay = 59 * 60 + 59
+}
 enum FocusDuration {
     static let maximum = 6 * 60 * 60
     static func isValid(_ seconds: Int) -> Bool { (1...maximum).contains(seconds) }

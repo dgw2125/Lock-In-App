@@ -8,15 +8,28 @@ import UniformTypeIdentifiers
     @Published var error: String?
     @Published var guardMessage = "Browser permissions are requested when a session starts."
     @Published var redirects = 0
+    @Published private(set) var scheduled: ScheduledFocus?
     private let guardService = BrowserGuard()
     private var timer: Timer?
     private var loadFailed = false
     private var lastSave = Date.distantPast
     private let file: URL
+    private let clock: () -> Date
+    private let browserMonitoring: Bool
     var active: FocusSession? { state.active }
     var remaining: Int { max(0, Int(ceil((active?.scheduledEnd ?? now).timeIntervalSince(now)))) }
     var countdown: String { FocusDuration.countdown(remaining) }
-    init(directory: URL? = nil, ticking: Bool = true) {
+    var delayRemaining: Int { max(0, Int(ceil((scheduled?.startsAt ?? now).timeIntervalSince(now)))) }
+    var delayCountdown: String { FocusDuration.countdown(delayRemaining) }
+    var menuTitle: String {
+        if active != nil { return "◎ \(countdown)" }
+        if scheduled != nil { return "Starts in \(delayCountdown)" }
+        return "◎ Lock In"
+    }
+    init(directory: URL? = nil, ticking: Bool = true, browserMonitoring: Bool = true, clock: @escaping () -> Date = Date.init) {
+        self.clock = clock
+        self.browserMonitoring = browserMonitoring
+        now = clock()
         let folder = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Lock In", isDirectory: true)
         file = folder.appendingPathComponent("state.json")
         do {
@@ -50,7 +63,7 @@ import UniformTypeIdentifiers
         if state.domains.contains(domain) { error = "That domain is already on your list."; return false }
         let before = state
         state.domains.append(domain); state.domains.sort()
-        if state.active != nil { state.active?.additions.append(Addition(domain: domain, date: Date())) }
+        if state.active != nil { state.active?.additions.append(Addition(domain: domain, date: clock())) }
         guard save() else { state = before; return false }
         if active != nil { poll() }
         return true
@@ -59,11 +72,29 @@ import UniformTypeIdentifiers
         guard active == nil else { return }
         let before = state
         state.domains.removeAll { $0 == domain }
-        if !save() { state = before }
+        if !save() { state = before; return }
+        if state.domains.isEmpty, scheduled != nil {
+            cancelScheduled()
+            error = "Countdown cancelled because the block list is empty. Add a website before scheduling another session."
+        }
+    }
+    func schedule(seconds: Int, after delay: Int) {
+        guard active == nil, scheduled == nil, !state.domains.isEmpty,
+              FocusDuration.isValid(seconds), (0...ScheduledFocus.maximumDelay).contains(delay) else { return }
+        if delay == 0 { start(seconds: seconds); return }
+        guard save() else { return }
+        now = clock()
+        scheduled = ScheduledFocus(startsAt: now.addingTimeInterval(Double(delay)), durationSeconds: seconds)
+        guardMessage = "Countdown running. Websites remain available until your session starts. Keep Lock In open."
+    }
+    func cancelScheduled() {
+        guard scheduled != nil else { return }
+        scheduled = nil
+        guardMessage = "Countdown cancelled. No focus session was recorded."
     }
     func start(seconds: Int) {
-        guard active == nil, !state.domains.isEmpty, FocusDuration.isValid(seconds) else { return }
-        now = Date(); redirects = 0
+        guard active == nil, scheduled == nil, !state.domains.isEmpty, FocusDuration.isValid(seconds) else { return }
+        now = clock(); redirects = 0
         state.active = FocusSession(start: now, scheduledEnd: now.addingTimeInterval(Double(seconds)), lastSeen: now, initialDomains: state.domains)
         guard save() else { state.active = nil; return }
         guardMessage = "Checking browser permissions…"
@@ -72,13 +103,17 @@ import UniformTypeIdentifiers
     func finish(_ outcome: String) {
         guard var session = active else { return }
         guardService.cancel()
-        session.finish(at: Date(), outcome: outcome)
+        session.finish(at: clock(), outcome: outcome)
         state.history.insert(session, at: 0); state.active = nil
         _ = save()
         guardMessage = "Session ended. Browser monitoring is off."
     }
     func tick() {
-        now = Date()
+        now = clock()
+        if let pending = scheduled, now >= pending.startsAt {
+            scheduled = nil
+            start(seconds: pending.durationSeconds)
+        }
         guard active != nil else { return }
         if remaining == 0 { finish("completed"); return }
         state.active?.lastSeen = now
@@ -86,7 +121,7 @@ import UniformTypeIdentifiers
         poll()
     }
     private func poll() {
-        guard let session = active else { return }
+        guard browserMonitoring, let session = active else { return }
         guardService.poll(domains: session.domains) { [weak self] result in
             guard let self, self.active?.id == session.id else { return }
             self.redirects += result.redirected

@@ -6,6 +6,9 @@ struct ContentView: View {
     @State private var domain = ""
     @State private var duration = 25 * 60
     @State private var showingHistory = false
+    @State private var delayEnabled = false
+    @State private var delay = 5 * 60
+    @State private var editingDelay = false
     @State private var gateOne = false
     @State private var gateTwo = false
     @State private var unlock = ""
@@ -62,10 +65,18 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 16) {
             GroupBox {
                 VStack(spacing: 12) {
-                    Text(model.active == nil ? "YOUR NEXT FOCUS SESSION" : "YOU’RE LOCKED IN").font(.caption.bold()).foregroundStyle(.secondary)
+                    Text(model.active != nil ? "YOU’RE LOCKED IN" : model.scheduled != nil ? "YOUR SESSION STARTS SOON" : "YOUR NEXT FOCUS SESSION").font(.caption.bold()).foregroundStyle(.secondary)
                     if model.active != nil {
                         Text(model.countdown).font(.system(size: 62, weight: .medium, design: .monospaced))
                         Button("End session early…") { gateOne = true }
+                    } else if let pending = model.scheduled {
+                        Text("Blocking starts in").foregroundStyle(.secondary)
+                        Text(model.delayCountdown).font(.system(size: 62, weight: .medium, design: .monospaced))
+                        Text("Then focus for " + FocusDuration.countdown(pending.durationSeconds))
+                            .font(.headline)
+                        Text("You can keep browsing for now. Keep Lock In open.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Cancel countdown") { model.cancelScheduled() }
                     } else {
                         HStack(spacing: 10) {
                             ForEach([25, 50, 90], id: \.self) { value in
@@ -82,9 +93,12 @@ struct ContentView: View {
                             DurationUnit(title: "SECONDS", value: component(1), maximum: duration >= FocusDuration.maximum ? 0 : 59)
                         }.padding(.vertical, 4)
                         Text("Up to 6 hours").font(.caption).foregroundStyle(.secondary)
-                        Button("Start focus session") { model.start(seconds: duration) }
+                        delayControls
+                        Button(delayEnabled ? "Begin countdown" : "Start focus session") {
+                            model.schedule(seconds: duration, after: delayEnabled ? delay : 0)
+                        }
                             .buttonStyle(.borderedProminent).tint(.green).controlSize(.large)
-                            .disabled(model.state.domains.isEmpty || !FocusDuration.isValid(duration))
+                            .disabled(model.state.domains.isEmpty || !FocusDuration.isValid(duration) || (delayEnabled && delay == 0))
                     }
                 }.frame(maxWidth: .infinity).padding(14)
             }
@@ -121,6 +135,51 @@ struct ContentView: View {
                 }.font(.caption).frame(maxWidth: .infinity, alignment: .leading).padding(6)
             }
         }
+    }
+    private var delayControls: some View {
+        HStack(spacing: 12) {
+            Toggle("Start after a countdown", isOn: $delayEnabled).toggleStyle(.switch)
+            if delayEnabled {
+                Button {
+                    editingDelay = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(FocusDuration.countdown(delay)).monospacedDigit()
+                        Image(systemName: "chevron.down").font(.caption)
+                    }
+                }
+                .accessibilityLabel("Edit start delay")
+                .popover(isPresented: $editingDelay) {
+                    VStack(spacing: 16) {
+                        Text("Start blocking after…").font(.headline)
+                        HStack {
+                            ForEach([1, 5, 10], id: \.self) { minutes in
+                                Button("\(minutes) min") { delay = minutes * 60 }
+                            }
+                        }
+                        HStack(spacing: 10) {
+                            DurationUnit(title: "MINUTES", value: delayComponent(60), maximum: 59)
+                            Text(":").font(.title).foregroundStyle(.secondary)
+                            DurationUnit(title: "SECONDS", value: delayComponent(1), maximum: 59)
+                        }
+                        Text("The focus-session timer starts after this countdown.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Done") { editingDelay = false }
+                            .buttonStyle(.borderedProminent).tint(.green)
+                            .disabled(delay == 0)
+                    }.padding(20)
+                }
+            }
+        }.fixedSize()
+    }
+    private func delayComponent(_ unit: Int) -> Binding<Int> {
+        Binding(
+            get: { delay / unit % 60 },
+            set: { value in
+                let bounded = min(59, max(0, value))
+                delay = unit == 60 ? bounded * 60 + delay % 60 : delay / 60 * 60 + bounded
+            }
+        )
     }
     private func component(_ unit: Int) -> Binding<Int> {
         Binding(
@@ -244,12 +303,22 @@ struct DurationUnit: View {
         NSApp.mainMenu = menu
     }
     func updateStatus() {
-        status.button?.title = model.active == nil ? "◎ Lock In" : "◎ \(model.countdown)"
+        status.button?.title = model.menuTitle
         status.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         status.button?.toolTip = "Open Lock In"
     }
     @objc func showWindow() { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if model.scheduled != nil {
+            showWindow()
+            let alert = NSAlert()
+            alert.messageText = "Quit and cancel the countdown?"
+            alert.informativeText = "Your scheduled focus session cannot start while Lock In is closed."
+            alert.addButton(withTitle: "Keep countdown"); alert.addButton(withTitle: "Cancel countdown and quit")
+            guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+            model.cancelScheduled()
+            return .terminateNow
+        }
         guard model.active != nil else { return .terminateNow }
         showWindow()
         let first = NSAlert(); first.messageText = "Quit and end your focus session?"

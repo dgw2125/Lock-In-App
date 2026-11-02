@@ -14,7 +14,7 @@ The app stays in the menu bar when its window closes. Click its menu bar countdo
 ## Use
 
 1. Add domains such as `instagram.com`. Pasted URLs normalize to their host. Add the base domain to include all its subdomains and paths. Entries are never automatically reduced to their registrable domain: `www.instagram.com` does not also block `instagram.com`.
-2. Choose hours, minutes, and seconds (1 second to 6 hours) and start.
+2. Choose hours, minutes, and seconds (1 second to 6 hours). To start later, turn on **Start after a countdown**, click the delay to choose minutes/seconds (1 second to 59 minutes 59 seconds), then click **Begin countdown**. Otherwise click **Start focus session**.
 3. Allow macOS Automation requests for the supported browsers you want monitored. If denied, enable Lock In under System Settings → Privacy & Security → Automation. The app displays automation failures.
 4. During a session, additions take effect on the next available browser scan. Existing entries cannot be removed.
 5. To end early, confirm and type `UNLOCK` exactly.
@@ -56,3 +56,9 @@ Automated checks cover domain normalization and boundary matching, second-level 
 - `build.sh`, `test.sh`: reproducible local build and checks.
 
 The app uses a bundled vector lock-and-focus icon at all standard Dock sizes. The build stages a new bundle before replacing the old one and retains the previous build under `build/previous.*`. Reopen the app after a build to use the updated version.
+
+## Delayed start (0.3.0)
+
+The optional pre-session countdown leaves websites available until it expires. The window and menu bar display the remaining delay separately from focus time. Cancel it with one click; the double confirmation remains required once blocking has started. Session duration is fixed when you schedule it. Block-list edits are allowed during the countdown, and the session uses the current list at activation. Removing the last website cancels the countdown with an explanation.
+
+Keep the app running: closing the window is fine, but quitting cancels the countdown (with a confirmation). A crash, shutdown, or relaunch does not restore a pending countdown. Delay time passes during sleep; if the deadline passes while asleep, a full focus session starts on wake, when blocking can actually begin. Countdown time and cancelled countdowns are not recorded as focus sessions. The six-hour cap applies to focus time; the start delay is separate. Browser permissions are first requested when blocking starts, so allow those promptly the first time you use it.
